@@ -17,12 +17,12 @@
 
 三件事，都在 AI 编码会话里完成：
 
-1. **动手前**：记录 git 基线。请求含"替换/改成/迁移"时，先回一行
+1. **动手前**：为本次任务记录 Git 基线。请求含"替换/改成/迁移"时，先回一行
    `替换确认 → 停用：<具体名字> | 新增：<具体名字>`，写不出停用侧的名字就停下来问。
 2. **交付时**：运行脚本生成机械证据（改动统计、被删符号、停用名字残留、fallback 特征），原样贴出，再按必报类别写汇报。简单改动用两行精简版。
 3. **落盘**：在项目根 `.ai-changes.md` 顶部插入一条，写给以后的人看。
 
-原则只有一句：**事实来自命令输出，AI 只写理由和决定。**
+你也可以直接在聊天里说“改前画一下这条路径”。AI 会用 `[A]`、`[B]` 等编号标出当前逻辑和拟改位置。回复“展开 B”查看步骤，或回复“按图改，把 B 放到 C”指定实现位置。改后沿用编号，从源码检查是否按意图实现。报告同时保留 Git 证据和实际测试结果。
 
 ## 安装
 
@@ -34,11 +34,14 @@ cp -r change-report ~/.agents/skills/         # 其他支持 Agent Skills 的环
 ## 用法
 
 ```sh
-python3 scripts/change_report.py start                    # 动手前
-python3 scripts/change_report.py start --old fetchUser    # 登记要停用的名字
-python3 scripts/change_report.py report                   # 交付时
-python3 scripts/change_report.py report --base <sha>      # 复查
+python3 scripts/change_report.py start
+python3 scripts/change_report.py mark-old --run "$run_id" fetchUser
+python3 scripts/change_report.py report --run "$run_id"
 ```
+
+把 `start` 输出的任务编号填入 `run_id`。首次记录时，也可以用 `start --old fetchUser` 一并登记。后续用 `mark-old` 追加，基线保持原样。
+
+`report --run` 使用指定任务的基线，适合多个任务交错进行。裸 `report` 使用当前工作树最近记录的基线。`report --base` 可指定 Git 引用，若没有匹配的最近任务元数据，报告会注明未跟踪文件和停用名登记的覆盖范围。
 
 输出示例：
 
@@ -47,7 +50,7 @@ python3 scripts/change_report.py report --base <sha>      # 复查
  src/user.ts | 16 +++++++++++-----
  1 file changed, 11 insertions(+), 5 deletions(-)
 
-== 删除的符号与文件 ==
+== 删除的符号与文件（符号为启发式候选） ==
 src/user.ts:5 loadDetail
 
 == 停用名字残留 ==
@@ -63,15 +66,16 @@ src/user.ts:10: } catch (e) {
 
 ## 边界（别当它比你聪明）
 
-- 只能缩小撒谎空间，不能消除：贴出的输出仍可能被改写，用 `--base` 复跑一次即可核对。
+- 报告比较基线和当前工作树，暂存状态不单列。用报告中的 `--run` 命令可复跑，结果随工作树变化。
+- 改前已有的未跟踪文件只保存内容摘要，可发现变化和删除。逐行差异无法从摘要恢复。Git 忽略且未被记录的文件不在比较范围内。
 - 停用名字 grep 为 0 不代表删干净：动态引用、字符串拼接、配置、仓库外的调用方都查不到。
 - fallback 是关键词扫描，有误报也有漏报；命中不等于错，只是必须逐条说明。
-- 符号识别是启发式的，大小写敏感；全大写定义（如 SQL 的 `CREATE FUNCTION`）识别不到。
+- 删除行上的定义是候选。其他文件出现同名新增时，原位置的候选仍会显示。同文件同名新增会提示核对。
 
 ## 开发
 
 ```sh
-python3 -m py_compile scripts/change_report.py
+python3 -m unittest discover -s tests -v
 ```
 
-脚本只用标准库，依赖 `git`。基线存在 `.git/change-report/baseline.json` 和 `refs/change-report/base`，不污染工作区。
+脚本只用 Python 标准库和 Git。任务元数据存在当前工作树的 Git 目录下，快照由 `refs/change-report/runs/` 下的引用保留。
